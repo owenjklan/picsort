@@ -1,0 +1,108 @@
+#!/usr/bin/env python3
+import os
+import sys
+import zipfile
+from zipfile import is_zipfile
+
+import click
+from click import secho
+
+
+# Supported source types
+ZIP_ARCHIVE_SRC = "zip"
+DIRECTORY_SRC = "directory"
+UNSUPPORTED_SRC = "unsupported"
+
+
+def determine_source_type(image_source):
+    # Fatal errors, like non-existant sources, will be reported and this
+    # function will exit if necessary.
+    if os.path.exists(image_source) is False:
+        secho(f"Specified source, {image_source}, does not exist!",
+              fg="red", bold=True, err=True)
+        sys.exit(1)
+
+    # Check if path is a directory
+    if os.path.isdir(image_source) is True:
+        return DIRECTORY_SRC
+
+    # Be sure it is actually a regular file
+    if os.path.isfile(image_source) is False:
+        secho(f"Specified source, {image_source}, is not a regular file, or a"
+              f" directory!", fg="red", bold=True, err=True)
+        sys.exit(1)
+
+    # Test if it is a valid ZIP file
+    if is_zipfile(image_source) is True:
+        return ZIP_ARCHIVE_SRC
+
+    # Might be useful to return unsupported in future.
+    secho(f"Specified source, {image_source}, is not a supported type!",
+          fg="red", bold=True, err=True)
+    sys.exit(1)
+
+
+def sort_image_sources(source_list):
+    directory_sources = []
+    zip_archive_sources = []
+
+    for image_source in source_list:
+        image_source_path = os.path.abspath(image_source)
+        image_source_type = determine_source_type(image_source_path)
+        if image_source_type == ZIP_ARCHIVE_SRC:
+            zip_archive_sources.append(image_source_path)
+        elif image_source_type == DIRECTORY_SRC:
+            directory_sources.append(image_source_path)
+        else:  # Place holder for when other source types might be added.
+            secho("Well, this is unexpected!")
+            sys.exit(1)
+
+    return directory_sources, zip_archive_sources
+
+
+@click.command()
+@click.argument("output_file", metavar="OUTPUT_FILE",
+                type=click.File("xb", lazy=True))
+@click.option("--source", "-s", "source_list",
+              type=str, metavar="SOURCE_PATH", multiple=True,
+              default=[], show_default=False,
+              help=("Specify a source of images to process. This can be a"
+                    " path to either a directory or a ZIP file. Multiple "
+                    "sources can be specified by using this option multiple"
+                    " times."))
+@click.option("--debug", "-D", "debug_flag",
+              type=bool, is_flag=True,
+              default=False, show_default=True,
+              help=("Show additional debugging information."))
+def main(output_file, source_list, debug_flag):
+    """
+    \033[44;37;1m PicSort \033[0m
+
+    \b
+    Sort large numbers of JPEG images into directories named by Year and
+    Month that photos were taken, determined by embedded EXIF data.
+    """
+    directory_sources, zip_archive_sources = sort_image_sources(source_list)
+
+    if debug_flag is True:
+        secho("Directory Sources:", fg="yellow", bold=True)
+        if len(directory_sources) == 0:
+            secho("- None Provided -")
+        else:
+            for dir_source in directory_sources:
+                secho(f"{dir_source}")
+
+        secho("ZIP File Sources:", fg="yellow", bold=True)
+        if len(zip_archive_sources) == 0:
+            secho("- None Provided -")
+        else:
+            for zip_source in zip_archive_sources:
+                secho(f"{zip_source}")
+
+    if len(directory_sources) == 0 and len(zip_archive_sources) == 0:
+        secho("No valid image sources were provided! Nothing to do.")
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()
