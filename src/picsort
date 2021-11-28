@@ -95,52 +95,68 @@ def get_dates_from_zip_source(image_source):
 
 
 def get_dates_from_directory_source(image_source, name_months=False,
-                                    recursive=False, ordered_months=False):
+                                    recursive=False, ordered_months=False,
+                                    included_extensions=[]):
     secho(f"Processing Directory Source: {os.path.basename(image_source)}")
 
     calculated_file_names = []
     unprocessable_file_names = []
+    non_image_file_names = []
 
     for image_file_name in os.listdir(image_source):
         image_file_path = os.path.join(image_source, image_file_name)
 
         if recursive is True and os.path.isdir(image_file_path) is True:
-            dir_tuples, error_tuples = get_dates_from_directory_source(
-                image_file_path, name_months=name_months, recursive=recursive,
+            dir_tuples, error_tuples, non_image_tuples = get_dates_from_directory_source(
+                image_file_path,
+                name_months=name_months,
+                recursive=recursive,
                 ordered_months=ordered_months,
+                included_extensions=included_extensions,
             )
             calculated_file_names.extend(dir_tuples)
             unprocessable_file_names.extend(error_tuples)
+            non_image_file_names.extend(non_image_tuples)
             continue
 
-        # Only JPEGs supported, Uppercase isn't unheard of on some devices.
-        if file_path_is_jpeg(image_file_path) is False:
+        if "." not in image_file_path:
+            continue  # Ignore non-extensions
+        extension = image_file_path.rsplit('.', 1)[1].lower()
+
+        if extension not in included_extensions and file_path_is_jpeg(image_file_path) is False:
             continue
 
         try:
-            with open(image_file_path, "rb") as image_file:
-                current_image = exif.Image(image_file)
-                if current_image.has_exif is False:
-                    # secho(f"Image has no EXIF data: {image_file_path}",
-                    #       fg="yellow", err=True)
-                    continue
-
-                exif_date_taken = current_image.datetime
-
-
-                taken_year, taken_month, _ =  split_exif_date_string(exif_date_taken)
-
-                if name_months is True:
-                    if ordered_months is True:
-                        month_string = f"{int(taken_month):02}_{MONTH_NAMES[int(taken_month)]}"
-                    else:
-                        month_string = MONTH_NAMES[int(taken_month)]
-
-
-                archive_file_name = f"{taken_year}/{month_string}/{image_file_name}"
-                calculated_file_names.append(
-                    (image_file_path, archive_file_name)
+            if extension != "jpg" and extension != "jpeg":
+                non_image_file_names.append(
+                    (
+                        image_file_path, f"extras/{os.path.basename(image_file_path)}"
+                    )
                 )
+            else:
+                with open(image_file_path, "rb") as image_file:
+                    current_image = exif.Image(image_file)
+                    if current_image.has_exif is False:
+                        # secho(f"Image has no EXIF data: {image_file_path}",
+                        #       fg="yellow", err=True)
+                        continue
+
+                    exif_date_taken = current_image.datetime
+
+                    taken_year, taken_month, _ =  split_exif_date_string(exif_date_taken)
+
+                    if name_months is True:
+                        if ordered_months is True:
+                            month_string = f"{int(taken_month):02}_{MONTH_NAMES[int(taken_month)]}"
+                        else:
+                            month_string = MONTH_NAMES[int(taken_month)]
+                    else:
+                        month_string = str(taken_month)
+
+                    archive_file_name = f"{taken_year}/{month_string}/{image_file_name}"
+                    calculated_file_names.append(
+                        (image_file_path, archive_file_name)
+                    )
         except Exception as e:
             # print(f"Exception: {e}")
             unprocessable_file_names.append(
@@ -150,7 +166,7 @@ def get_dates_from_directory_source(image_source, name_months=False,
                 )
             )
 
-    return calculated_file_names, unprocessable_file_names
+    return calculated_file_names, unprocessable_file_names, non_image_file_names
 
 
 @click.command()
@@ -163,6 +179,10 @@ def get_dates_from_directory_source(image_source, name_months=False,
                     " path to either a directory or a ZIP file. Multiple "
                     "sources can be specified by using this option multiple"
                     " times."))
+@click.option("--include-extension", "-I", "include_extensions_list",
+              type=str, metavar="EXTENSION", multiple=True,
+              default=[], show_default=False,
+              help=("Files with the given extension will also be sorted."))
 @click.option("--month-names", "-m", "use_month_names_flag",
               type=bool, is_flag=True,
               default=False, show_default=True,
@@ -180,7 +200,7 @@ def get_dates_from_directory_source(image_source, name_months=False,
               default=False, show_default=True,
               help=("Show additional debugging information."))
 def main(output_file, source_list, use_month_names_flag, debug_flag,
-         recursive_flag, ordered_months_flag):
+         recursive_flag, ordered_months_flag, include_extensions_list):
     """
     \033[44;37;1m PicSort \033[0m
 
@@ -211,20 +231,33 @@ def main(output_file, source_list, use_month_names_flag, debug_flag,
 
     archive_copy_tuples = []
     archive_unsorted_tuples = []
+    archive_extra_tuples = []
+
+    # Force all included extensions to lower case
+    include_extensions_list = [ext.lower() for ext in include_extensions_list]
 
     for dir_source in directory_sources:
-        file_copy_tuples, unsorted_tuples = get_dates_from_directory_source(
+        file_copy_tuples, unsorted_tuples, extra_tuples = get_dates_from_directory_source(
             dir_source, name_months=use_month_names_flag,
             ordered_months=ordered_months_flag,
             recursive=recursive_flag,
+            included_extensions=include_extensions_list,
         )
         archive_copy_tuples.extend(file_copy_tuples)
         archive_unsorted_tuples.extend(unsorted_tuples)
-
+        archive_extra_tuples.extend(extra_tuples)
 
     if archive_unsorted_tuples is not None and len(archive_unsorted_tuples) > 0:
         archive_copy_tuples.extend(archive_unsorted_tuples)
         secho("Appended unsortable tuples")
+
+    if archive_extra_tuples is not None and len(archive_extra_tuples) > 0:
+        archive_copy_tuples.extend(archive_extra_tuples)
+        secho("Appended extra tuples")
+
+    if len(archive_copy_tuples) == 0:
+        secho("No files were found to copy!")
+        sys.exit(1)
 
     # Create the Progress bar
     progress_bar = TextProgressBar("file", 40, 0, len(archive_copy_tuples),
