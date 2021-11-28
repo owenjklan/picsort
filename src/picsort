@@ -5,6 +5,7 @@ import zipfile
 from zipfile import is_zipfile
 
 import click
+import exif
 from click import secho
 
 
@@ -60,6 +61,48 @@ def sort_image_sources(source_list):
     return directory_sources, zip_archive_sources
 
 
+def file_path_is_jpeg(abs_file_path):
+    if abs_file_path.lower().endswith(".jpg") is False:
+        return False
+
+
+def split_exif_date_string(exif_date_string):
+    date_portion = exif_date_string.split(" ", 1)[0]
+    year, month, day = date_portion.split(":")
+    return year, month, day
+
+
+def get_dates_from_zip_source(image_source):
+    pass
+
+
+def get_dates_from_directory_source(image_source):
+    calculated_file_names = []
+
+    for image_file_name in os.listdir(image_source):
+        image_file_path = os.path.join(image_source, image_file_name)
+
+        # Only JPEGs supported, Uppercase isn't unheard of on some devices.
+        if file_path_is_jpeg(image_file_path) is False:
+            continue
+
+        with open(image_file_path, "rb") as image_file:
+            current_image = exif.Image(image_file)
+            if current_image.has_exif is False:
+                secho(f"Image has no EXIF data: {image_file_path}",
+                      fg="yellow", err=True)
+                continue
+
+            exif_date_taken = current_image.datetime
+            taken_year, taken_month, _ =  split_exif_date_string(exif_date_taken)
+
+            archive_file_name = f"{taken_year}/{taken_month}/{image_file_name}"
+            calculated_file_names.append(
+                (image_file_path, archive_file_name)
+            )
+    return calculated_file_names
+
+
 @click.command()
 @click.argument("output_file", metavar="OUTPUT_FILE",
                 type=click.File("xb", lazy=True))
@@ -102,6 +145,15 @@ def main(output_file, source_list, debug_flag):
     if len(directory_sources) == 0 and len(zip_archive_sources) == 0:
         secho("No valid image sources were provided! Nothing to do.")
         sys.exit(1)
+
+    archive_copy_tuples = []
+
+    for dir_source in directory_sources:
+        secho(f"Processing Directory Source: {os.path.basename(dir_source)}")
+        file_copy_tuples = get_dates_from_directory_source(dir_source)
+        archive_copy_tuples.extend(file_copy_tuples)
+
+    # Open ZIP file
 
 
 if __name__ == "__main__":
