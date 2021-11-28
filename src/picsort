@@ -94,35 +94,59 @@ def get_dates_from_zip_source(image_source):
     pass
 
 
-def get_dates_from_directory_source(image_source, name_months=False):
+def get_dates_from_directory_source(image_source, name_months=False,
+                                    recursive=False):
+    secho(f"Processing Directory Source: {os.path.basename(image_source)}")
+
     calculated_file_names = []
+    unprocessable_file_names = []
 
     for image_file_name in os.listdir(image_source):
         image_file_path = os.path.join(image_source, image_file_name)
+
+        if recursive is True and os.path.isdir(image_file_path) is True:
+            dir_tuples, error_tuples = get_dates_from_directory_source(
+                image_file_path, name_months=name_months, recursive=recursive
+            )
+            calculated_file_names.extend(dir_tuples)
+            unprocessable_file_names.extend(error_tuples)
+            continue
 
         # Only JPEGs supported, Uppercase isn't unheard of on some devices.
         if file_path_is_jpeg(image_file_path) is False:
             continue
 
-        with open(image_file_path, "rb") as image_file:
-            current_image = exif.Image(image_file)
-            if current_image.has_exif is False:
-                secho(f"Image has no EXIF data: {image_file_path}",
-                      fg="yellow", err=True)
-                continue
+        try:
+            with open(image_file_path, "rb") as image_file:
+                current_image = exif.Image(image_file)
+                if current_image.has_exif is False:
+                    secho(f"Image has no EXIF data: {image_file_path}",
+                          fg="yellow", err=True)
+                    continue
 
-            exif_date_taken = current_image.datetime
-            taken_year, taken_month, _ =  split_exif_date_string(exif_date_taken)
-
-            if name_months is True:
-                month_string = MONTH_NAMES[int(taken_month)]
+                exif_date_taken = current_image.datetime
 
 
-            archive_file_name = f"{taken_year}/{month_string}/{image_file_name}"
-            calculated_file_names.append(
-                (image_file_path, archive_file_name)
+                taken_year, taken_month, _ =  split_exif_date_string(exif_date_taken)
+
+                if name_months is True:
+                    month_string = MONTH_NAMES[int(taken_month)]
+
+
+                archive_file_name = f"{taken_year}/{month_string}/{image_file_name}"
+                calculated_file_names.append(
+                    (image_file_path, archive_file_name)
+                )
+        except Exception as e:
+            print(f"Exception: {e}")
+            unprocessable_file_names.append(
+                (
+                    image_file_path,
+                    f"unsorted/{os.path.basename(image_file_path)}"
+                )
             )
-    return calculated_file_names
+
+    return calculated_file_names, unprocessable_file_names
 
 
 @click.command()
@@ -139,11 +163,16 @@ def get_dates_from_directory_source(image_source, name_months=False):
               type=bool, is_flag=True,
               default=False, show_default=True,
               help=("Use month names in ouput archive."))
+@click.option("--recursive", "-r", "recursive_flag",
+              type=bool, is_flag=True,
+              default=False, show_default=True,
+              help=("Recursively process directories."))
 @click.option("--debug", "-D", "debug_flag",
               type=bool, is_flag=True,
               default=False, show_default=True,
               help=("Show additional debugging information."))
-def main(output_file, source_list, use_month_names_flag, debug_flag):
+def main(output_file, source_list, use_month_names_flag, debug_flag,
+         recursive_flag):
     """
     \033[44;37;1m PicSort \033[0m
 
@@ -173,12 +202,20 @@ def main(output_file, source_list, use_month_names_flag, debug_flag):
         sys.exit(1)
 
     archive_copy_tuples = []
+    archive_unsorted_tuples = []
 
     for dir_source in directory_sources:
-        secho(f"Processing Directory Source: {os.path.basename(dir_source)}")
-        file_copy_tuples = get_dates_from_directory_source(
-            dir_source, name_months=use_month_names_flag)
+        file_copy_tuples, unsorted_tuples = get_dates_from_directory_source(
+            dir_source, name_months=use_month_names_flag,
+            recursive=recursive_flag,
+        )
         archive_copy_tuples.extend(file_copy_tuples)
+        archive_unsorted_tuples.extend(unsorted_tuples)
+
+
+    if archive_unsorted_tuples is not None and len(archive_unsorted_tuples) > 0:
+        archive_copy_tuples.extend(archive_unsorted_tuples)
+        secho("Appended unsortable tuples")
 
     # Create the Progress bar
     progress_bar = TextProgressBar("file", 40, 0, len(archive_copy_tuples),
@@ -199,6 +236,7 @@ def main(output_file, source_list, use_month_names_flag, debug_flag):
     # Open ZIP file, create. Binary mode is implied
     with zipfile.ZipFile(output_file.name, "x") as output_zip:
         progress_bar.render()
+
         for file_tuple in archive_copy_tuples:
             src_file, archive_dest = file_tuple
 
