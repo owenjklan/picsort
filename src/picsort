@@ -95,7 +95,7 @@ def get_dates_from_zip_source(image_source):
 
 
 def get_dates_from_directory_source(image_source, name_months=False,
-                                    recursive=False):
+                                    recursive=False, ordered_months=False):
     secho(f"Processing Directory Source: {os.path.basename(image_source)}")
 
     calculated_file_names = []
@@ -106,7 +106,8 @@ def get_dates_from_directory_source(image_source, name_months=False,
 
         if recursive is True and os.path.isdir(image_file_path) is True:
             dir_tuples, error_tuples = get_dates_from_directory_source(
-                image_file_path, name_months=name_months, recursive=recursive
+                image_file_path, name_months=name_months, recursive=recursive,
+                ordered_months=ordered_months,
             )
             calculated_file_names.extend(dir_tuples)
             unprocessable_file_names.extend(error_tuples)
@@ -130,7 +131,10 @@ def get_dates_from_directory_source(image_source, name_months=False,
                 taken_year, taken_month, _ =  split_exif_date_string(exif_date_taken)
 
                 if name_months is True:
-                    month_string = MONTH_NAMES[int(taken_month)]
+                    if ordered_months is True:
+                        month_string = f"{int(taken_month):02}_{MONTH_NAMES[int(taken_month)]}"
+                    else:
+                        month_string = MONTH_NAMES[int(taken_month)]
 
 
                 archive_file_name = f"{taken_year}/{month_string}/{image_file_name}"
@@ -167,12 +171,16 @@ def get_dates_from_directory_source(image_source, name_months=False,
               type=bool, is_flag=True,
               default=False, show_default=True,
               help=("Recursively process directories."))
+@click.option("--ordered-months", "-O", "ordered_months_flag",
+              type=bool, is_flag=True,
+              default=False, show_default=True,
+              help=("Create 'sorted' month names."))
 @click.option("--debug", "-D", "debug_flag",
               type=bool, is_flag=True,
               default=False, show_default=True,
               help=("Show additional debugging information."))
 def main(output_file, source_list, use_month_names_flag, debug_flag,
-         recursive_flag):
+         recursive_flag, ordered_months_flag):
     """
     \033[44;37;1m PicSort \033[0m
 
@@ -207,6 +215,7 @@ def main(output_file, source_list, use_month_names_flag, debug_flag,
     for dir_source in directory_sources:
         file_copy_tuples, unsorted_tuples = get_dates_from_directory_source(
             dir_source, name_months=use_month_names_flag,
+            ordered_months=ordered_months_flag,
             recursive=recursive_flag,
         )
         archive_copy_tuples.extend(file_copy_tuples)
