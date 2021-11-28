@@ -74,11 +74,27 @@ def split_exif_date_string(exif_date_string):
     return year, month, day
 
 
+MONTH_NAMES = {
+    1: "January",
+    2: "February",
+    3: "March",
+    4: "April",
+    5: "May",
+    6: "June",
+    7: "July",
+    8: "August",
+    9: "September",
+    10: "October",
+    11: "November",
+    12: "December",
+}
+
+
 def get_dates_from_zip_source(image_source):
     pass
 
 
-def get_dates_from_directory_source(image_source):
+def get_dates_from_directory_source(image_source, name_months=False):
     calculated_file_names = []
 
     for image_file_name in os.listdir(image_source):
@@ -98,7 +114,11 @@ def get_dates_from_directory_source(image_source):
             exif_date_taken = current_image.datetime
             taken_year, taken_month, _ =  split_exif_date_string(exif_date_taken)
 
-            archive_file_name = f"{taken_year}/{taken_month}/{image_file_name}"
+            if name_months is True:
+                month_string = MONTH_NAMES[int(taken_month)]
+
+
+            archive_file_name = f"{taken_year}/{month_string}/{image_file_name}"
             calculated_file_names.append(
                 (image_file_path, archive_file_name)
             )
@@ -115,11 +135,15 @@ def get_dates_from_directory_source(image_source):
                     " path to either a directory or a ZIP file. Multiple "
                     "sources can be specified by using this option multiple"
                     " times."))
+@click.option("--month-names", "-m", "use_month_names_flag",
+              type=bool, is_flag=True,
+              default=False, show_default=True,
+              help=("Use month names in ouput archive."))
 @click.option("--debug", "-D", "debug_flag",
               type=bool, is_flag=True,
               default=False, show_default=True,
               help=("Show additional debugging information."))
-def main(output_file, source_list, debug_flag):
+def main(output_file, source_list, use_month_names_flag, debug_flag):
     """
     \033[44;37;1m PicSort \033[0m
 
@@ -152,12 +176,25 @@ def main(output_file, source_list, debug_flag):
 
     for dir_source in directory_sources:
         secho(f"Processing Directory Source: {os.path.basename(dir_source)}")
-        file_copy_tuples = get_dates_from_directory_source(dir_source)
+        file_copy_tuples = get_dates_from_directory_source(
+            dir_source, name_months=use_month_names_flag)
         archive_copy_tuples.extend(file_copy_tuples)
 
     # Create the Progress bar
     progress_bar = TextProgressBar("file", 40, 0, len(archive_copy_tuples),
                                    suffix="files")
+
+    # Test for existence of output file, prompt if already found
+    if os.path.exists(output_file.name):
+        secho(f"Target archive file, {output_file.name}, already exists!",
+              fg="red", bold=True, err=True)
+        overwrite = click.confirm("Replace output file?")
+        if overwrite is False:
+            secho("Aborting due to user selection.")
+            sys.exit(1)
+        else:
+            secho("Replacing output archive.")
+            os.unlink(output_file.name)
 
     # Open ZIP file, create. Binary mode is implied
     with zipfile.ZipFile(output_file.name, "x") as output_zip:
