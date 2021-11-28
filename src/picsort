@@ -153,7 +153,12 @@ def main(output_file, source_list, debug_flag):
         file_copy_tuples = get_dates_from_directory_source(dir_source)
         archive_copy_tuples.extend(file_copy_tuples)
 
-    # Open ZIP file
+    # Open ZIP file, create. Binary mode is implied
+    with zipfile.ZipFile(output_file.name, "x") as output_zip:
+        for file_tuple in archive_copy_tuples:
+            src_file, archive_dest = file_tuple
+
+            output_zip.write(src_file, archive_dest)
 
 
 if __name__ == "__main__":
