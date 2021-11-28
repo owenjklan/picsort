@@ -121,8 +121,8 @@ def get_dates_from_directory_source(image_source, name_months=False,
             with open(image_file_path, "rb") as image_file:
                 current_image = exif.Image(image_file)
                 if current_image.has_exif is False:
-                    secho(f"Image has no EXIF data: {image_file_path}",
-                          fg="yellow", err=True)
+                    # secho(f"Image has no EXIF data: {image_file_path}",
+                    #       fg="yellow", err=True)
                     continue
 
                 exif_date_taken = current_image.datetime
@@ -142,7 +142,7 @@ def get_dates_from_directory_source(image_source, name_months=False,
                     (image_file_path, archive_file_name)
                 )
         except Exception as e:
-            print(f"Exception: {e}")
+            # print(f"Exception: {e}")
             unprocessable_file_names.append(
                 (
                     image_file_path,
